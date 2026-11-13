@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'turret_vision = turret_control.camera_node:main',
         ],
     },
 )
