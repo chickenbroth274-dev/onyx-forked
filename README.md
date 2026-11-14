@@ -302,3 +302,61 @@ The current development is limited to camera-based image processing and target-c
 It does not currently implement turret actuation, laser activation or autonomous aiming control.
 
 The objective is to provide reliable visual target-position information for integration with the wider UGV system.
+
+## Camera-Based Target Detection and Localisation
+
+### Completed Tasks
+
+The camera-based target detection and localisation module has been implemented using Python, OpenCV and ROS 2 Humble.
+
+**1. Camera Integration**
+- Integrated an Android smartphone camera using DroidCam.
+- Connected the camera to Ubuntu through the `/dev/video2` video device.
+- Integrated camera capture using OpenCV and the V4L2 interface.
+- Verified camera capture at approximately 1280 × 720 resolution.
+- Independently measured approximately 30 FPS during the camera capture test.
+
+**2. Target Detection**
+- Implemented concentric-circle target detection in `target_detector.py`.
+- Applied grayscale conversion and Gaussian blurring.
+- Used Canny edge detection and contour extraction.
+- Used ellipse fitting to identify circular candidates.
+- Implemented candidate filtering and validation based on concentricity and radius ratios.
+- Tested detection using a printed concentric-circle target.
+
+**3. Target Localisation**
+- Implemented target-centre calculation in `target_localizer.py`.
+- Implemented pixel displacement calculation relative to the image centre.
+- Generated target-centre coordinates in image pixels.
+
+**4. ROS 2 Integration**
+- Implemented the `turret_vision` ROS 2 node in `camera_node.py`.
+- Added a separate camera capture thread to keep frame acquisition independent of image processing.
+- Integrated target detection and localisation with the ROS 2 publishing pipeline.
+- Published target detection status, target-centre coordinates and annotated images.
+
+### ROS 2 Topics
+
+| Topic | Message Type | Purpose |
+|---|---|---|
+| `/turret/target_detected` | `std_msgs/Bool` | Publishes whether a target is detected. |
+| `/turret/target_center` | `std_msgs/Float32MultiArray` | Publishes target-centre pixel coordinates. |
+| `/turret/debug_image` | `sensor_msgs/Image` | Publishes the annotated camera feed. |
+
+### Visualisation and Testing
+
+- Used `rqt_image_view` to visualise the live camera feed.
+- Verified that the target centre is detected and annotated.
+- Verified ROS 2 topic publishing.
+- Tested camera capture independently and measured approximately 30 FPS.
+- Added processing-time measurements for capture, detection, resizing, image conversion and publishing.
+
+### Remaining Work
+
+- Investigate inconsistent ROS debug-image publishing frequency.
+- Optimise the camera-to-ROS image pipeline.
+- Improve camera orientation handling.
+- Perform further detection tests under different lighting conditions, distances and viewing angles.
+- Validate performance using the competition-specified target dimensions and setup.
+
+**Current status:** Camera integration, target detection, pixel-centre localisation and ROS 2 publishing are implemented and tested. Stable real-time ROS image delivery and competition-condition validation remain pending.
