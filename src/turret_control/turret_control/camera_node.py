@@ -18,7 +18,7 @@ from turret_control.target_detector import detect_concentric_target
 
 
 class CameraNode(Node):
-    """Capture camera frames independently of ROS image processing."""
+    """Capture frames independently; always process the newest available frame."""
 
     def __init__(self):
         super().__init__('camera_node')
@@ -161,13 +161,18 @@ class CameraNode(Node):
             ):
                 return
 
-            frame = self.latest_frame.copy()
+            # The capture thread replaces latest_frame with a new array; it
+            # does not modify this one. Keeping the reference avoids a full
+            # 1280x720 copy before detection.
+            frame = self.latest_frame
 
             self.last_processed_sequence = (
                 self.frame_sequence
             )
 
-        debug_frame = frame.copy()
+        # Create an annotated copy only when a ROS image subscriber exists.
+        publish_debug_image = self.image_pub.get_subscription_count() > 0
+        debug_frame = frame.copy() if publish_debug_image else None
 
         # 1. Target detection.
         start = time.perf_counter()
@@ -201,74 +206,63 @@ class CameraNode(Node):
 
             self.center_pub.publish(center_msg)
 
-            # Annotate target centre.
-            cv2.circle(
-                debug_frame,
-                (round(center_x), round(center_y)),
-                5,
-                (0, 255, 0),
-                -1
-            )
+            # Annotate only when the debug image is actually being consumed.
+            if debug_frame is not None:
+                cv2.circle(
+                    debug_frame,
+                    (round(center_x), round(center_y)),
+                    5,
+                    (0, 255, 0),
+                    -1
+                )
 
-            cv2.putText(
-                debug_frame,
-                f'Center: ({center_x:.1f}, {center_y:.1f})',
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
-                2
-            )
+                cv2.putText(
+                    debug_frame,
+                    f'Center: ({center_x:.1f}, {center_y:.1f})',
+                    (20, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 0),
+                    2
+                )
 
         else:
 
             detected_msg.data = False
 
-            cv2.putText(
-                debug_frame,
-                'Target not detected',
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 0, 255),
-                2
-            )
+            if debug_frame is not None:
+                cv2.putText(
+                    debug_frame,
+                    'Target not detected',
+                    (20, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2
+                )
 
         self.detection_pub.publish(detected_msg)
 
-        # 3. Resize the visualisation image.
-        start = time.perf_counter()
+        # Resize, convert and publish only when a debug-image subscriber exists.
+        if debug_frame is not None:
+            start = time.perf_counter()
+            display_frame = cv2.resize(
+                debug_frame,
+                (640, 360),
+                interpolation=cv2.INTER_AREA
+            )
+            self.timings['resize'] += time.perf_counter() - start
 
-        display_frame = cv2.resize(
-            debug_frame,
-            (640, 360),
-            interpolation=cv2.INTER_AREA
-        )
+            start = time.perf_counter()
+            image_msg = self.bridge.cv2_to_imgmsg(
+                display_frame,
+                encoding='bgr8'
+            )
+            self.timings['conversion'] += time.perf_counter() - start
 
-        self.timings['resize'] += (
-            time.perf_counter() - start
-        )
-
-        # 4. Convert OpenCV image to ROS image.
-        start = time.perf_counter()
-
-        image_msg = self.bridge.cv2_to_imgmsg(
-            display_frame,
-            encoding='bgr8'
-        )
-
-        self.timings['conversion'] += (
-            time.perf_counter() - start
-        )
-
-        # 5. Publish every processed frame.
-        start = time.perf_counter()
-
-        self.image_pub.publish(image_msg)
-
-        self.timings['publish'] += (
-            time.perf_counter() - start
-        )
+            start = time.perf_counter()
+            self.image_pub.publish(image_msg)
+            self.timings['publish'] += time.perf_counter() - start
 
         # Measure total processing time.
         self.timings['total'] += (
